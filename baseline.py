@@ -1,14 +1,13 @@
 from ollama import chat
 import json
+from prompts import BASELINE_PROMPT
 
 def baseline(prompt):
     response = chat(model='llama3', messages=[
         {
             'role': 'system',
             'content': (
-                "You are a coding assistant."
-                "You are to only return code and no other additional content as a response wrapped around ```python``` by default."
-                "If the user specifies a different coding language, wrap it in the appropriate language tags."
+                BASELINE_PROMPT
             ),
         },
         {
