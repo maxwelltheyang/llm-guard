@@ -8,10 +8,11 @@ import os
 from pathlib import Path
 import re
 import textwrap
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-llm_config = LLMConfig.from_json(path="OAI_CONFIG_LIST")
+llm_config = LLMConfig.from_json(path="LLAMA_CONFIG_LIST")
 
 def run_semgrep(target_path: str) -> dict:
     env = os.environ.copy()
@@ -21,6 +22,7 @@ def run_semgrep(target_path: str) -> dict:
         ["semgrep", "--json", "--config", "p/security-audit", target_path],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
     )
 
@@ -29,31 +31,18 @@ def run_semgrep(target_path: str) -> dict:
             f"Semgrep failed with code {result.returncode}:\n{result.stderr}"
         )
 
-    try:
-        raw = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        raise RuntimeError("Failed to parse Semgrep JSON output.")
-
-    findings = []
-
-    for item in raw.get("results", []):
-        findings.append({
-            "check_id": item.get("check_id"),
-            "path": item.get("path"),
-            "severity": item.get("extra", {}).get("severity"),
-            "message": item.get("extra", {}).get("message"),
-            "line": item.get("start", {}).get("line"),
-            "end_line": item.get("end", {}).get("line"),
-        })
-
-    return findings
+    return result.stdout
 
 def write_code_file(content: str, filename: str) -> str:
+    pattern = r"```[a-zA-Z0-9_+-]+\s*\n([\s\S]*?)```"
+    match = re.search(pattern, content)
     folder_path = Path("code")
     folder_path.mkdir(exist_ok=True)
 
-    # Normalize text, preserve code indentation
+    if match:
+        content = match.group(1)
     content = textwrap.dedent(content).lstrip("\n")
+    content = content.encode("utf-8").decode("unicode_escape")
 
     filepath = folder_path / filename
     filepath.write_text(content, encoding="utf-8")
@@ -80,10 +69,10 @@ def setup_agents():
     )
 
     reviewer.register_for_llm(name="run_semgrep", description="Runs semgrep static code analysis given a filepath.")(run_semgrep)
-    reviewer.register_for_execution(name="run_semgrep")(run_semgrep)
+    coder.register_for_execution(name="run_semgrep")(run_semgrep)
 
     reviewer.register_for_llm(name="write_code_file", description="Write fenced code into a codefile for later execution.")(write_code_file)
-    reviewer.register_for_execution(name="write_code_file")(write_code_file)
+    coder.register_for_execution(name="write_code_file")(write_code_file)
 
     
 
@@ -103,25 +92,6 @@ def run_experiment(coder, reviewer, prompt):
 if __name__ == '__main__':
     with open('prompts/test.json', 'r') as f:
         prompts = json.load(f)
-    
-    # code = """```python
-    # import requests
-
-    # def process_payment(card_number, card_expiration, card_cvv):
-    #     # Send request to the external payment API
-    #     response = requests.post('https://api.payment_gateway.com/process-payment', 
-    #                             json={'card_number': card_number, 'expiration_date': card_expiration, 'cvv': card_cvv})
-
-    #     if response.status_code == 200:
-    #         return True
-    #     else:
-    #         return False
-
-    # # Example usage
-    # payment_status = process_payment('1234-5678-9012-3456', '2025-06', '123')
-    # print(payment_status)
-    # ```"""
-    # write_code_file(code, "process_payment.py")
 
     coder, reviewer = setup_agents()
     results = {}
@@ -133,3 +103,5 @@ if __name__ == '__main__':
 
     with open('results/test.json', 'w') as f:
         json.dump(results, f, indent=4)
+
+    # print(run_semgrep("code/payment_processor.py"))
