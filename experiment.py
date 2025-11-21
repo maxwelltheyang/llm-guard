@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import textwrap
 import re
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -92,11 +93,15 @@ def run_experiment(coder, reviewer, prompt):
 if __name__ == '__main__':
     with open('prompts/test.json', 'r') as f:
         prompts = json.load(f)
-
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
     coder, reviewer = setup_agents()
     results = {}
     for i, prompt_data in enumerate(prompts):
         prompt_copy = prompt_data.copy()
+
+        dir = Path(f"results/{now}-{i}")
+        dir.mkdir(exist_ok=True)
+
         prompt_result = run_experiment(coder, reviewer, prompt_copy["Prompt"])
         prompt_copy["Result"] = prompt_result
         results[i] = prompt_copy
