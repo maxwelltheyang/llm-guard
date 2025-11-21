@@ -1,23 +1,24 @@
 import logging
-from autogen import ConversableAgent, LLMConfig, register_function
-from autogen.tools import tool
+from autogen import ConversableAgent, LLMConfig
 from prompts import CODER_PROMPT, JUDGE_PROMPT
 import json
 import subprocess
 import os
 from pathlib import Path
-import re
 import textwrap
-import re
 from datetime import datetime
+import re
+import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import redirect_stdout
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-llm_config = LLMConfig.from_json(path="LLAMA_CONFIG_LIST")
 
 def run_semgrep(target_path: str) -> dict:
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
+    env["PYTHONWARNINGS"] = "ignore:invalid escape sequence"
 
     result = subprocess.run(
         ["semgrep", "--json", "--config", "p/security-audit", target_path],
@@ -48,10 +49,10 @@ def write_code_file(content: str, filename: str) -> str:
     filepath = folder_path / filename
     filepath.write_text(content, encoding="utf-8")
 
+    logger.info(f"Wrote code file to {filepath}")
     return str(filepath)
 
-
-def setup_agents():
+def setup_agents(llm_config: LLMConfig):
     coder = ConversableAgent(
         name="coder",
         system_message=CODER_PROMPT,
@@ -69,44 +70,95 @@ def setup_agents():
         human_input_mode="NEVER",
     )
 
-    reviewer.register_for_llm(name="run_semgrep", description="Runs semgrep static code analysis given a filepath.")(run_semgrep)
+    reviewer.register_for_llm(
+        name="run_semgrep",
+        description="Runs semgrep static code analysis given a filepath."
+    )(run_semgrep)
     coder.register_for_execution(name="run_semgrep")(run_semgrep)
 
-    reviewer.register_for_llm(name="write_code_file", description="Write fenced code into a codefile for later execution.")(write_code_file)
+    reviewer.register_for_llm(
+        name="write_code_file",
+        description="Write fenced code into a codefile for later execution."
+    )(write_code_file)
     coder.register_for_execution(name="write_code_file")(write_code_file)
-
-    
 
     return coder, reviewer
 
-def run_experiment(coder, reviewer, prompt):
-    response = reviewer.run(
-        recipient=coder,
-        message=prompt,
-        max_turns=10
-    )
+def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_result_dir: str, timestamp: str, max_turns: int):
+    exp_dir = Path(base_result_dir) / f"{timestamp}-{i}"
+    exp_dir.mkdir(parents=True, exist_ok=True)
 
-    response.process()
+    log_path = exp_dir / f"experiment_{i}.log"
 
-    return response.messages[-2]["content"]
+    with log_path.open("w", encoding="utf-8") as log_f, redirect_stdout(log_f):
+        print(f"[Experiment {i}] Starting…")
+        print(f"[Experiment {i}] Prompt: {prompt_text!r}")
 
-if __name__ == '__main__':
-    with open('prompts/test.json', 'r') as f:
+        try:
+            llm_config = LLMConfig.from_json(path=llm_config_path)
+            coder, reviewer = setup_agents(llm_config)
+
+            response = reviewer.run(
+                recipient=coder,
+                message=prompt_text,
+                max_turns=max_turns,
+            )
+            response.process()
+
+            result_content = response.messages[-2]["content"]
+            result_obj = {"Prompt": prompt_text, "Result": result_content}
+
+            with (exp_dir / "result.json").open("w", encoding="utf-8") as fh:
+                json.dump(result_obj, fh, indent=4, ensure_ascii=False)
+
+            print(f"[Experiment {i}] Completed successfully.")
+            return i, result_obj
+
+        except Exception as e:
+            print(f"[Experiment {i}] FAILED: {e}")
+            return i, {"Prompt": prompt_text, "Error": str(e)}
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--prompt_file", type=str, default="prompts/test.json")
+    parser.add_argument("--result_dir", type=str, default="results")
+    parser.add_argument("--llm_config", type=str, default="LLAMA_CONFIG_LIST")
+    parser.add_argument("--max_workers", type=int, default=1)
+    parser.add_argument("--max_turns", type=int, default=10)
+    args = parser.parse_args()
+
+    with open(args.prompt_file, "r", encoding="utf-8") as f:
         prompts = json.load(f)
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    coder, reviewer = setup_agents()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    Path(args.result_dir).mkdir(parents=True, exist_ok=True)
+
     results = {}
-    for i, prompt_data in enumerate(prompts):
-        prompt_copy = prompt_data.copy()
+    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        futures = []
+        for i, prompt_data in enumerate(prompts):
+            prompt_text = prompt_data.get("Prompt", "")
+            futures.append(
+                executor.submit(
+                    run_single_experiment,
+                    i,
+                    prompt_text,
+                    args.llm_config,
+                    args.result_dir,
+                    timestamp,
+                    args.max_turns,
+                )
+            )
 
-        dir = Path(f"results/{now}-{i}")
-        dir.mkdir(exist_ok=True)
+        for fut in as_completed(futures):
+            i, result_obj = fut.result()
+            results[i] = result_obj
 
-        prompt_result = run_experiment(coder, reviewer, prompt_copy["Prompt"])
-        prompt_copy["Result"] = prompt_result
-        results[i] = prompt_copy
+    aggregated_path = Path(args.result_dir) / "test.json"
+    with aggregated_path.open("w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4, ensure_ascii=False)
 
-    with open('results/test.json', 'w') as f:
-        json.dump(results, f, indent=4)
+    logger.info(f"Wrote aggregated results to {aggregated_path}")
 
-    # print(run_semgrep("code/payment_processor.py"))
+if __name__ == "__main__":
+    main()
