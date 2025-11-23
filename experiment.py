@@ -1,6 +1,6 @@
 import logging
 from autogen import ConversableAgent, LLMConfig
-from prompts import CODER_PROMPT, JUDGE_PROMPT
+from prompts import CODER_PROMPT, judge_prompt
 import json
 import subprocess
 import os
@@ -35,24 +35,22 @@ def run_semgrep(target_path: str) -> dict:
 
     return result.stdout
 
-def write_code_file(content: str, filename: str) -> str:
+def write_code_file(content: str, output_path: Path) -> str:
     pattern = r"```[a-zA-Z0-9_+-]+\s*\n([\s\S]*?)```"
     match = re.search(pattern, content)
-    folder_path = Path("code")
-    folder_path.mkdir(exist_ok=True)
 
     if match:
         content = match.group(1)
     content = textwrap.dedent(content).lstrip("\n")
     content = content.encode("utf-8").decode("unicode_escape")
 
-    filepath = folder_path / filename
-    filepath.write_text(content, encoding="utf-8")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content, encoding="utf-8")
 
-    logger.info(f"Wrote code file to {filepath}")
-    return str(filepath)
+    logger.info(f"Wrote code file to {output_path}")
+    return str(output_path)
 
-def setup_agents(llm_config: LLMConfig):
+def setup_agents(llm_config: LLMConfig, working_dir: str):
     coder = ConversableAgent(
         name="coder",
         system_message=CODER_PROMPT,
@@ -65,7 +63,7 @@ def setup_agents(llm_config: LLMConfig):
 
     reviewer = ConversableAgent(
         name="judge",
-        system_message=JUDGE_PROMPT,
+        system_message=judge_prompt(working_dir),
         llm_config=llm_config,
         human_input_mode="NEVER",
     )
@@ -96,7 +94,7 @@ def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_r
 
         try:
             llm_config = LLMConfig.from_json(path=llm_config_path)
-            coder, reviewer = setup_agents(llm_config)
+            coder, reviewer = setup_agents(llm_config, exp_dir)
 
             response = reviewer.run(
                 recipient=coder,
@@ -105,7 +103,7 @@ def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_r
             )
             response.process()
 
-            result_content = response.messages[-2]["content"]
+            result_content = response.summary
             result_obj = {"Prompt": prompt_text, "Result": result_content}
 
             with (exp_dir / "result.json").open("w", encoding="utf-8") as fh:
