@@ -82,8 +82,21 @@ def setup_agents(llm_config: LLMConfig, working_dir: str):
 
     return coder, reviewer
 
-def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_result_dir: str, timestamp: str, max_turns: int):
-    exp_dir = Path(base_result_dir) / f"{timestamp}-{i}"
+def get_last_codefile_from_calls(chat_history):
+    chat_history = json.dumps(chat_history)
+    for msg in reversed(chat_history):
+        if "tool_calls" in msg:
+            for call in msg["tool_calls"]:
+                fn = call.get("function", {})
+                if fn.get("name") == "write_code_file":
+                    match = re.search(r'"output_path"\s*:\s*"([^"]+)"', fn.get("args", ""))
+                    if match:
+                        output_path = match.group(1)
+                        return output_path
+    return "N/A"
+
+def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_result_dir: str, max_turns: int):
+    exp_dir = Path(base_result_dir) / str(i)
     exp_dir.mkdir(parents=True, exist_ok=True)
 
     log_path = exp_dir / f"experiment_{i}.log"
@@ -103,8 +116,7 @@ def run_single_experiment(i: int, prompt_text: str, llm_config_path: str, base_r
             )
             response.process()
 
-            result_content = response.summary
-            result_obj = {"Prompt": prompt_text, "Result": result_content}
+            result_obj = {"Prompt": prompt_text, "Result": get_last_codefile_from_calls(response.messages)}
 
             with (exp_dir / "result.json").open("w", encoding="utf-8") as fh:
                 json.dump(result_obj, fh, indent=4, ensure_ascii=False)
@@ -129,7 +141,8 @@ def main():
         prompts = json.load(f)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    Path(args.result_dir).mkdir(parents=True, exist_ok=True)
+    timed_result_dir = Path(args.result_dir) / timestamp
+    timed_result_dir.mkdir(parents=True, exist_ok=True)
 
     results = {}
     with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
@@ -142,8 +155,7 @@ def main():
                     i,
                     prompt_text,
                     args.llm_config,
-                    args.result_dir,
-                    timestamp,
+                    timed_result_dir,
                     args.max_turns,
                 )
             )
