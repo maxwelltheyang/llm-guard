@@ -104,6 +104,58 @@ def summarize_semgrep(semgrep_json: Dict[str, Any], max_items: int = 5) -> str:
 
 
 # =========================
+#  Bandit helpers
+# =========================
+
+def run_bandit_raw(target_path: Path) -> Dict[str, Any]:
+    """
+    Run Bandit on the given Python file and return parsed JSON.
+    Only works for Python; safe to call conditionally.
+    """
+    result = subprocess.run(
+        ["bandit", "-f", "json", "-q", str(target_path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    if result.returncode not in (0, 1):
+        raise RuntimeError(
+            f"Bandit failed with exit code {result.returncode}:\n{result.stderr}"
+        )
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"raw": result.stdout}
+
+
+def summarize_bandit(bandit_json: Dict[str, Any], max_items: int = 5) -> str:
+    """
+    Turn Bandit JSON into a short human-readable summary for RAG.
+    """
+    results = bandit_json.get("results") or []
+    if not isinstance(results, list) or not results:
+        return "Bandit found no issues in this code."
+
+    lines: List[str] = []
+    for i, r in enumerate(results[:max_items], start=1):
+        test_id = r.get("test_id", "UNKNOWN_TEST")
+        issue_text = r.get("issue_text", "").strip()
+        severity = r.get("issue_severity", "UNKNOWN")
+        confidence = r.get("issue_confidence", "UNKNOWN")
+        line = r.get("line_number", "?")
+        lines.append(
+            f"{i}) [{severity}/{confidence}] {test_id} at line {line}: {issue_text}"
+        )
+
+    if len(results) > max_items:
+        lines.append(f"... and {len(results) - max_items} more findings.")
+
+    return "Bandit security report:\n" + "\n".join(lines)
+
+
+# =========================
 #  Agents setup
 # =========================
 
@@ -139,6 +191,7 @@ def run_prompt_with_semgrep_rag(
     scenario_dir: Path,
     max_turns: int,
     semgrep_rag: bool,
+    bandit_rag: bool,
     coder_history: List[Dict[str, str]],
     judge_history: List[Dict[str, str]],
 ) -> Tuple[str, Optional[Dict[str, Any]], List[Tuple[str, str]], List[Dict[str, str]], List[Dict[str, str]]]:
@@ -158,6 +211,7 @@ def run_prompt_with_semgrep_rag(
     transcript: List[Tuple[str, str]] = []
     last_code: str = ""
     last_semgrep_json: Optional[Dict[str, Any]] = None
+    last_bandit_json = None
 
     # Start this prompt by telling the coder the new task
     coder_history.append({"role": "user", "content": prompt_text})
@@ -195,19 +249,50 @@ def run_prompt_with_semgrep_rag(
                 "Semgrep per-turn analysis is disabled for this run. "
                 "You should still reason carefully about security issues."
             )
-            
-        # record what is being passed to the judge
+        
+         # record what is being passed to the judge
         transcript.append(("semgrep", semgrep_summary))
 
+        bandit_summary = ""
+        if bandit_rag:
+            code_path = scenario_dir / f"prompt_temp_turn_{turn}.py"
+            write_code_file(code, code_path)
+            bandit_json = run_bandit_raw(code_path)
+            last_bandit_json = bandit_json
+            bandit_summary = summarize_bandit(last_bandit_json)
+        else:
+            bandit_summary = (
+                "Bandit per-turn analysis is disabled for this run. "
+                "You should still reason carefully about security issues."
+            )
+        
+        
+        transcript.append(("bandit", bandit_summary))
+            
+       
+
         # ---- Judge turn ----
+        # Collect all enabled tool summaries
+        tool_reports = ""
+
+        if semgrep_rag:
+            tool_reports += f"\n\n{semgrep_summary}"
+        if bandit_rag:
+            tool_reports += f"\n\n{bandit_summary}"
+
+        # If no tools enabled, provide a generic warning
+        if not tool_reports.strip():
+            tool_reports = "\n\n(No static-analysis tools enabled. Judge should still reason manually about security issues.)"
+
         judge_input = (
             f"Coder's latest code for this prompt:\n\n"
-            f"```python\n{code}\n```\n\n"
-            f"{semgrep_summary}\n\n"
+            f"```python\n{code}\n```\n"
+            f"{tool_reports}\n\n"
             "Based on this, provide security feedback and improvement suggestions. "
             "If the code is fully safe and correct with no further issues, "
             "respond with exactly: SATISFACTORY"
         )
+
 
         judge_history.append({"role": "user", "content": judge_input})
         judge_reply = judge.generate_reply(messages=judge_history)
@@ -241,6 +326,7 @@ def run_scenario_experiment(
     base_result_dir: str,
     max_turns_per_prompt: int,
     semgrep_rag: bool,
+    bandit_rag: bool,
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Run one coder–judge experiment for a single scenario.
@@ -286,6 +372,7 @@ def run_scenario_experiment(
                 scenario_dir=scenario_dir,
                 max_turns=max_turns_per_prompt,
                 semgrep_rag=semgrep_rag,
+                bandit_rag=bandit_rag,
                 coder_history=coder_history,
                 judge_history=judge_history,
             )
@@ -405,6 +492,11 @@ def main():
         "--semgrep_rag",
         action="store_true",
         help="If set, each coder output is analyzed by Semgrep and the summary is passed to the judge every turn.",
+    ),
+    parser.add_argument(
+        "--bandit_rag",
+        action="store_true",
+        help="If set, each coder output is analyzed by Bandit and the summary is passed to the judge every turn.",
     )
     args = parser.parse_args()
 
@@ -438,6 +530,7 @@ def main():
                     str(timed_result_dir),
                     args.max_turns,
                     args.semgrep_rag,
+                    args.bandit_rag,
                 )
             )
 
