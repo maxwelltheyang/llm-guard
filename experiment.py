@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 CODE_BLOCK_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n([\s\S]*?)```", re.MULTILINE)
 
 
-def extract_code_block(text: str) -> str:
+def extract_code_block(text: str) -> tuple:
     """
     Extract the first fenced code block from the model output.
     Returns the inner code as a string, or "" if not found.
@@ -34,7 +34,50 @@ def extract_code_block(text: str) -> str:
         return ""
     code = m.group(1)
     code = textwrap.dedent(code).lstrip("\n")
-    return code
+
+    LANGUAGE_EXTENSIONS = {
+        "python": "py",
+        "javascript": "js",
+        "typescript": "ts",
+        "java": "java",
+        "c": "c",
+        "cpp": "cpp",
+        "c++": "cpp",
+        "csharp": "cs",
+        "cs": "cs",
+        "go": "go",
+        "ruby": "rb",
+        "php": "php",
+        "swift": "swift",
+        "kotlin": "kt",
+        "scala": "scala",
+        "rust": "rs",
+        "r": "r",
+        "perl": "pl",
+        "html": "html",
+        "css": "css",
+        "json": "json",
+        "xml": "xml",
+        "shell": "sh",
+        "bash": "sh",
+        "powershell": "ps1",
+        "dart": "dart",
+        "sql": "sql",
+        "matlab": "m",
+        "julia": "jl",
+        "haskell": "hs",
+        "lua": "lua",
+        "yaml": "yml",
+        "markdown": "md",
+        "text": "txt",
+    }
+
+    language_match = re.match(r"```([a-zA-Z0-9_+-]+)", text)
+    if language_match:
+        language = language_match.group(1)
+    else:
+        language = "python"
+    return code, LANGUAGE_EXTENSIONS[language.strip().lower()]
 
 
 def write_code_file(code: str, dest_path: Path) -> Path:
@@ -229,8 +272,8 @@ def run_prompt_with_semgrep_rag(
         coder_history.append({"role": "assistant", "content": coder_text})
 
         # Extract code from coder output
-        code = extract_code_block(coder_text)
-        if not code:
+        code, extension = extract_code_block(coder_text)
+        if not code or not extension:
             # No code found; stop this prompt early
             break
 
@@ -239,7 +282,7 @@ def run_prompt_with_semgrep_rag(
         # ---- Semgrep per-turn (optional RAG) ----
         semgrep_summary = ""
         if semgrep_rag:
-            code_path = scenario_dir / f"prompt_temp_turn_{turn}.py"
+            code_path = scenario_dir / f"prompt_temp_turn_{turn}.{extension}"
             write_code_file(code, code_path)
             semgrep_json = run_semgrep_raw(code_path)
             last_semgrep_json = semgrep_json
@@ -254,8 +297,8 @@ def run_prompt_with_semgrep_rag(
         transcript.append(("semgrep", semgrep_summary))
 
         bandit_summary = ""
-        if bandit_rag:
-            code_path = scenario_dir / f"prompt_temp_turn_{turn}.py"
+        if bandit_rag and extension == "py":
+            code_path = scenario_dir / f"prompt_temp_turn_{turn}.{extension}"
             write_code_file(code, code_path)
             bandit_json = run_bandit_raw(code_path)
             last_bandit_json = bandit_json
@@ -312,7 +355,7 @@ def run_prompt_with_semgrep_rag(
         if judge_text.strip() == "SATISFACTORY":
             break
 
-    return last_code, last_semgrep_json, transcript, coder_history, judge_history
+    return last_code, last_semgrep_json, transcript, coder_history, judge_history, extension
 
 
 # =========================
@@ -364,7 +407,7 @@ def run_scenario_experiment(
         logger.info(f"Scenario {scenario_number} - Prompt {prompt_number}")
 
         # Run iterative loop for this prompt
-        final_code, last_semgrep_json, transcript, coder_history, judge_history = (
+        final_code, last_semgrep_json, transcript, coder_history, judge_history, extension = (
             run_prompt_with_semgrep_rag(
                 coder=coder,
                 judge=judge,
@@ -398,8 +441,26 @@ def run_scenario_experiment(
         # --- Save final code for this prompt ---
         final_code_path: Optional[Path] = None
         if final_code:
-            final_code_path = scenario_dir / f"prompt_{prompt_number}_final.py"
+            code_dir = scenario_dir / f"prompt_{prompt_number}"
+            final_code_path = code_dir / f"prompt_{prompt_number}.{extension}"
             write_code_file(final_code, final_code_path)
+
+            # Only generate requirements.txt and check pip module vulneraibilities if it is a python file
+            if extension == "py":
+                # --- Generate and check requirements.txt for the code ---
+                subprocess.run(
+                    ["pipreqs", str(code_dir)],
+                    text=True,
+                    encoding="utf-8",
+                )
+
+                # --- Check for CVE vulnerabilities in package and fix them ---
+                req_path = code_dir / "requirements.txt"
+                subprocess.run(
+                    ["pip-audit", "-r", str(req_path), "--fix"],
+                    text=True,
+                    encoding="utf-8",
+                )
 
         # --- Ensure we have final Semgrep JSON for this prompt ---
         semgrep_json: Optional[Dict[str, Any]] = last_semgrep_json
@@ -437,6 +498,7 @@ def run_scenario_experiment(
                 "Prompt": prompt_text,
                 "VulnerabilityDescription": vuln_desc,
                 "final_code_path": str(final_code_path) if final_code_path else None,
+                "requirements_path": str(req_path) if req_path else None,
                 "semgrep_vuln_count": semgrep_vuln_count,
                 "semgrep_result_path": str(semgrep_result_path) if semgrep_result_path else None,
                 "conversation_log_path": str(log_path),
@@ -496,7 +558,12 @@ def main():
     parser.add_argument(
         "--bandit_rag",
         action="store_true",
-        help="If set, each coder output is analyzed by Bandit and the summary is passed to the judge every turn.",
+        help="PYTHON ONLY If set, each coder output is analyzed by Bandit and the summary is passed to the judge every turn.",
+    )
+    parser.add_argument(
+        "--provide_deps",
+        action="store_true",
+        help="PYTHON ONLY If set, the requirements.txt is provided with the final code output from the coder.",
     )
     args = parser.parse_args()
 
