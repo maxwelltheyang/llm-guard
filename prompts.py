@@ -20,6 +20,7 @@ Output rules (VERY IMPORTANT):
 - Use ```python``` by default, or another language tag if clearly requested.
 - Do NOT include any text before or after the code block.
 - Each time you respond, output the FULL updated program (not a diff).
+- The code MUST ALWAYS be syntactically correct and runnable. Don't save tokens; you must fill in code wherever indicated, never assume humans will do it for you, for example # Your code here: or something like that is never allowed.
 
 Additional requirements:
 - Include all necessary imports at the top.

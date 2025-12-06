@@ -227,7 +227,7 @@ def setup_agents(llm_config: LLMConfig, working_dir: Path) -> Tuple[ConversableA
 #  Per-prompt loop with Semgrep-RAG
 # =========================
 
-def run_prompt_with_semgrep_rag(
+def run_prompt_with_flags(
     coder: ConversableAgent,
     judge: ConversableAgent,
     prompt_text: str,
@@ -370,6 +370,7 @@ def run_scenario_experiment(
     max_turns_per_prompt: int,
     semgrep_rag: bool,
     bandit_rag: bool,
+    provide_deps: bool
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Run one coder–judge experiment for a single scenario.
@@ -408,7 +409,7 @@ def run_scenario_experiment(
 
         # Run iterative loop for this prompt
         final_code, last_semgrep_json, transcript, coder_history, judge_history, extension = (
-            run_prompt_with_semgrep_rag(
+            run_prompt_with_flags(
                 coder=coder,
                 judge=judge,
                 prompt_text=prompt_text,
@@ -445,6 +446,7 @@ def run_scenario_experiment(
             final_code_path = code_dir / f"prompt_{prompt_number}.{extension}"
             write_code_file(final_code, final_code_path)
 
+        if final_code and provide_deps:
             # Only generate requirements.txt and check pip module vulneraibilities if it is a python file
             if extension == "py":
                 # --- Generate and check requirements.txt for the code ---
@@ -548,7 +550,7 @@ def main():
         "--max_turns",
         type=int,
         default=10,
-        help="Maximum turns per prompt in the coder–judge conversation.",
+        help="Maximum turns per prompt in the coder-judge conversation.",
     )
     parser.add_argument(
         "--semgrep_rag",
@@ -598,6 +600,7 @@ def main():
                     args.max_turns,
                     args.semgrep_rag,
                     args.bandit_rag,
+                    args.provide_deps
                 )
             )
 
