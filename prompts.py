@@ -27,8 +27,7 @@ Additional requirements:
 - When the reviewer points out issues or vulnerabilities, FIX THEM in your next version of the code.
 """
 
-def judge_prompt(working_dir: str) -> str:
-    return f"""
+JUDGE_PROMPT = """
 You are the JUDGE in a secure code-review system.
 
 You will repeatedly receive:

@@ -12,14 +12,10 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from autogen import ConversableAgent, LLMConfig
-from prompts import CODER_PROMPT, judge_prompt
+from prompts import CODER_PROMPT, JUDGE_PROMPT
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# =========================
-#  Code extraction helpers
-# =========================
 
 CODE_BLOCK_RE = re.compile(r"```[a-zA-Z0-9_+-]*\s*\n([\s\S]*?)```", re.MULTILINE)
 
@@ -89,10 +85,6 @@ def write_code_file(code: str, dest_path: Path) -> Path:
     return dest_path
 
 
-# =========================
-#  Semgrep helpers
-# =========================
-
 def run_semgrep_raw(target_path: Path) -> Dict[str, Any]:
     """
     Run Semgrep on the given file and return parsed JSON.
@@ -146,10 +138,6 @@ def summarize_semgrep(semgrep_json: Dict[str, Any], max_items: int = 5) -> str:
     return "Semgrep security report:\n" + "\n".join(lines)
 
 
-# =========================
-#  Bandit helpers
-# =========================
-
 def run_bandit_raw(target_path: Path) -> Dict[str, Any]:
     """
     Run Bandit on the given Python file and return parsed JSON.
@@ -174,9 +162,6 @@ def run_bandit_raw(target_path: Path) -> Dict[str, Any]:
 
 
 def summarize_bandit(bandit_json: Dict[str, Any], max_items: int = 5) -> str:
-    """
-    Turn Bandit JSON into a short human-readable summary for RAG.
-    """
     results = bandit_json.get("results") or []
     if not isinstance(results, list) or not results:
         return "Bandit found no issues in this code."
@@ -198,14 +183,8 @@ def summarize_bandit(bandit_json: Dict[str, Any], max_items: int = 5) -> str:
     return "Bandit security report:\n" + "\n".join(lines)
 
 
-# =========================
-#  Agents setup
-# =========================
 
 def setup_agents(llm_config: LLMConfig, working_dir: Path) -> Tuple[ConversableAgent, ConversableAgent]:
-    """
-    Create coder and judge agents for one scenario.
-    """
     coder = ConversableAgent(
         name="coder",
         system_message=CODER_PROMPT,
@@ -215,17 +194,12 @@ def setup_agents(llm_config: LLMConfig, working_dir: Path) -> Tuple[ConversableA
 
     reviewer = ConversableAgent(
         name="judge",
-        system_message=judge_prompt(str(working_dir)),
+        system_message=JUDGE_PROMPT,
         llm_config=llm_config,
         human_input_mode="NEVER",
     )
 
     return coder, reviewer
-
-
-# =========================
-#  Per-prompt loop with Semgrep-RAG
-# =========================
 
 def run_prompt_with_flags(
     coder: ConversableAgent,
@@ -256,7 +230,6 @@ def run_prompt_with_flags(
     last_semgrep_json: Optional[Dict[str, Any]] = None
     last_bandit_json = None
 
-    # Start this prompt by telling the coder the new task
     coder_history.append({"role": "user", "content": prompt_text})
 
     for turn in range(1, max_turns + 1):
@@ -268,18 +241,13 @@ def run_prompt_with_flags(
             coder_text = coder_reply.get("content", "")
         transcript.append(("coder", coder_text))
 
-        # Record in coder history (assistant)
         coder_history.append({"role": "assistant", "content": coder_text})
-
-        # Extract code from coder output
         code, extension = extract_code_block(coder_text)
         if not code or not extension:
-            # No code found; stop this prompt early
             break
 
         last_code = code
 
-        # ---- Semgrep per-turn (optional RAG) ----
         semgrep_summary = ""
         if semgrep_rag:
             code_path = scenario_dir / f"prompt_temp_turn_{turn}.{extension}"
@@ -292,8 +260,7 @@ def run_prompt_with_flags(
                 "Semgrep per-turn analysis is disabled for this run. "
                 "You should still reason carefully about security issues."
             )
-        
-         # record what is being passed to the judge
+
         transcript.append(("semgrep", semgrep_summary))
 
         bandit_summary = ""
@@ -311,11 +278,7 @@ def run_prompt_with_flags(
         
         
         transcript.append(("bandit", bandit_summary))
-            
-       
-
-        # ---- Judge turn ----
-        # Collect all enabled tool summaries
+   
         tool_reports = ""
 
         if semgrep_rag:
@@ -323,7 +286,6 @@ def run_prompt_with_flags(
         if bandit_rag:
             tool_reports += f"\n\n{bandit_summary}"
 
-        # If no tools enabled, provide a generic warning
         if not tool_reports.strip():
             tool_reports = "\n\n(No static-analysis tools enabled. Judge should still reason manually about security issues.)"
 
@@ -345,22 +307,14 @@ def run_prompt_with_flags(
             judge_text = judge_reply.get("content", "")
         transcript.append(("judge", judge_text))
 
-        # Record in judge history
         judge_history.append({"role": "assistant", "content": judge_text})
 
-        # Feed judge feedback back into coder's context as the next user message
         coder_history.append({"role": "user", "content": judge_text})
 
-        # Check termination
         if judge_text.strip() == "SATISFACTORY":
             break
 
     return last_code, last_semgrep_json, transcript, coder_history, judge_history, extension
-
-
-# =========================
-#  Scenario-level runner
-# =========================
 
 def run_scenario_experiment(
     scenario_number: str,
@@ -407,7 +361,6 @@ def run_scenario_experiment(
 
         logger.info(f"Scenario {scenario_number} - Prompt {prompt_number}")
 
-        # Run iterative loop for this prompt
         final_code, last_semgrep_json, transcript, coder_history, judge_history, extension = (
             run_prompt_with_flags(
                 coder=coder,
@@ -449,14 +402,12 @@ def run_scenario_experiment(
         if final_code and provide_deps:
             # Only generate requirements.txt and check pip module vulneraibilities if it is a python file
             if extension == "py":
-                # --- Generate and check requirements.txt for the code ---
                 subprocess.run(
                     ["pipreqs", str(code_dir)],
                     text=True,
                     encoding="utf-8",
                 )
 
-                # --- Check for CVE vulnerabilities in package and fix them ---
                 req_path = code_dir / "requirements.txt"
                 subprocess.run(
                     ["pip-audit", "-r", str(req_path), "--fix"],
@@ -464,14 +415,12 @@ def run_scenario_experiment(
                     encoding="utf-8",
                 )
 
-        # --- Ensure we have final Semgrep JSON for this prompt ---
         semgrep_json: Optional[Dict[str, Any]] = last_semgrep_json
         semgrep_result_path: Optional[Path] = None
         semgrep_vuln_count: Optional[int] = None
 
         if final_code_path is not None:
             if semgrep_json is None:
-                # No per-turn Semgrep performed or last result missing -> run once on final code
                 try:
                     semgrep_json = run_semgrep_raw(final_code_path)
                 except Exception as e:
@@ -481,7 +430,6 @@ def run_scenario_experiment(
                     )
                     semgrep_json = None
 
-        # Write Semgrep JSON and compute vuln count if available
         if semgrep_json is not None:
             semgrep_result_path = scenario_dir / f"prompt_{prompt_number}_semgrep_final.json"
             with semgrep_result_path.open("w", encoding="utf-8") as sf:
@@ -507,18 +455,12 @@ def run_scenario_experiment(
             }
         )
 
-    # Scenario-level summary file
     scenario_result_path = scenario_dir / "scenario_result.json"
     with scenario_result_path.open("w", encoding="utf-8") as fh:
         json.dump(per_prompt_results, fh, indent=4, ensure_ascii=False)
 
     logger.info(f"Scenario {scenario_number} completed. Summary at {scenario_result_path}")
     return scenario_number, per_prompt_results
-
-
-# =========================
-#  CLI entrypoint
-# =========================
 
 def main():
     parser = argparse.ArgumentParser()
