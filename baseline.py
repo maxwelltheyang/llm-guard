@@ -2,6 +2,7 @@ from ollama import chat
 import json
 from prompts import BASELINE_PROMPT
 from openai import OpenAI
+from experiment import extract_code_block, write_code_file
 
 with open("OAI_CONFIG_LIST", "r") as f:
     oai_config_list = json.load(f)
@@ -52,15 +53,17 @@ def baseline_deepseek(prompt):
     return response['message']['content']
 
 if __name__ == '__main__':
-    with open('prompts/llm_multiturn_vulnerability_prompts.json', 'r') as f:
+    with open('prompts/llm_vulnerability_prompts.json', 'r') as f:
         prompts = json.load(f)
 
     results = {}
     for i, prompt_data in enumerate(prompts):
         prompt_copy = prompt_data.copy()
-        prompt_result = baseline(prompt_copy["Prompt"])
-        prompt_copy["Result"] = prompt_result
+        prompt_result = baseline_llama(prompt_copy["Prompt"])
+        code, _ = extract_code_block(prompt_result)
+        write_code_file(code, 'results/baseline/i')
+        prompt_copy["Result"] = code
         results[i] = prompt_copy
 
-    with open('results/llama3_baseline_multiturn_results.json', 'w') as f:
+    with open('results/baseline/llama3.1_baseline.json', 'w') as f:
         json.dump(results, f, indent=4)
