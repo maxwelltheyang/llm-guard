@@ -73,7 +73,7 @@ def extract_code_block(text: str) -> tuple:
         language = language_match.group(1)
     else:
         language = "python"
-    return code, LANGUAGE_EXTENSIONS[language.strip().lower()]
+    return code, LANGUAGE_EXTENSIONS.get(language.strip().lower(), "py")
 
 
 def write_code_file(code: str, dest_path: Path) -> Path:
