@@ -62,12 +62,12 @@ if __name__ == '__main__':
     def process_prompt(args):
         i, prompt_data = args
         prompt_copy = prompt_data.copy()
-        prompt_result = baseline_gpt(prompt_copy["Prompt"])
+        prompt_result = baseline_deepseek(prompt_copy["Prompt"])
         result = extract_code_block(prompt_result)
         
         if result:
             code, ext = result
-            dest_path = Path(f'results/baseline/gpt/{prompt_copy["ScenarioNumber"]}.{ext}')
+            dest_path = Path(f'results/baseline/deepseek/{prompt_copy["ScenarioNumber"]}-{str(prompt_copy["PromptNumber"])}.{ext}')
             write_code_file(code, dest_path)
             prompt_copy["Result"] = str(dest_path)
         else:
@@ -81,5 +81,5 @@ if __name__ == '__main__':
             i, prompt_copy = future.result()
             results[i] = prompt_copy
 
-    with open('results/baseline/gpt-coder_baseline.json', 'w') as f:
+    with open('results/baseline/deepseek-coder_baseline.json', 'w') as f:
         json.dump(results, f, indent=4)

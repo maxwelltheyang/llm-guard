@@ -1,0 +1,2 @@
+PASSWORD_EXPIRATION = 90
+TWO_FACTOR_EXPIRATION = 5 * 60  # 5 minutes in seconds
