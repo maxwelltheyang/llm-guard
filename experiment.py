@@ -68,7 +68,8 @@ def extract_code_block(text: str) -> tuple:
         "text": "txt",
     }
 
-    language_match = re.match(r"```([a-zA-Z0-9_+-]+)", text)
+    code_block_start = text[m.start():m.start()+20]
+    language_match = re.match(r"```([a-zA-Z0-9_+-]+)", code_block_start)
     if language_match:
         language = language_match.group(1)
     else:

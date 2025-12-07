@@ -1,0 +1,1 @@
+GRANT SELECT, INSERT, UPDATE, DELETE ON its_tables TO this_app;

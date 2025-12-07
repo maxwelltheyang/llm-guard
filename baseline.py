@@ -32,8 +32,7 @@ def baseline_gpt(prompt):
     result = client.responses.create(
         model="gpt-4o",
         instructions=BASELINE_PROMPT,
-        input=prompt,
-        reasoning={ "effort": "high" },
+        input=prompt
     )
 
     return result.output_text
@@ -55,7 +54,7 @@ def baseline_deepseek(prompt):
     return response['message']['content']
 
 if __name__ == '__main__':
-    with open('prompts/llm_vulnerability_prompts.json', 'r') as f:
+    with open('prompts/llm_multiturn_vulnerability_prompts.json', 'r') as f:
         prompts = json.load(f)
 
     results = {}
@@ -63,11 +62,17 @@ if __name__ == '__main__':
     def process_prompt(args):
         i, prompt_data = args
         prompt_copy = prompt_data.copy()
-        prompt_result = baseline_llama(prompt_copy["Prompt"])
-        code, ext = extract_code_block(prompt_result)
-        dest_path = Path(f'results/baseline/llama/{prompt_copy["ScenarioNumber"]}.{ext}')
-        write_code_file(code, dest_path)
-        prompt_copy["Result"] = code
+        prompt_result = baseline_gpt(prompt_copy["Prompt"])
+        result = extract_code_block(prompt_result)
+        
+        if result:
+            code, ext = result
+            dest_path = Path(f'results/baseline/gpt/{prompt_copy["ScenarioNumber"]}.{ext}')
+            write_code_file(code, dest_path)
+            prompt_copy["Result"] = str(dest_path)
+        else:
+            prompt_copy["Result"] = "An error occurred, no code block found"
+        
         return i, prompt_copy
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
@@ -76,5 +81,5 @@ if __name__ == '__main__':
             i, prompt_copy = future.result()
             results[i] = prompt_copy
 
-    with open('results/baseline/llama3.1_baseline.json', 'w') as f:
+    with open('results/baseline/gpt-coder_baseline.json', 'w') as f:
         json.dump(results, f, indent=4)
