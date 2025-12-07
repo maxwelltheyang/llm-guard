@@ -360,6 +360,8 @@ def run_scenario_experiment(
         prompt_number = row.get("PromptNumber")
         vuln_desc = row.get("VulnerabilityDescription")
 
+        req_path: Optional[Path] = None  # <- add this line
+
         logger.info(f"Scenario {scenario_number} - Prompt {prompt_number}")
 
         final_code, last_semgrep_json, transcript, coder_history, judge_history, extension = (
@@ -411,7 +413,7 @@ def run_scenario_experiment(
 
                 req_path = code_dir / "requirements.txt"
                 subprocess.run(
-                    ["pip-audit", "-r", str(req_path), "--fix"],
+                    ["pip-audit", "-r", str(req_path)],
                     text=True,
                     encoding="utf-8",
                 )
