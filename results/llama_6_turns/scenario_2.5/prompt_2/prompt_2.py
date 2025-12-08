@@ -1,0 +1,27 @@
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/hello', methods=['GET'])
+def hello():
+    username = request.args.get('username')
+    if not username:
+        return 'Please provide a username.', 400
+    if any(char in username for char in '<>:"/\\|?*'):
+        return 'Invalid character in username.', 400
+    return f'Hello {username}!', 200
+
+@app.route('/calc', methods=['GET'])
+def calc():
+    num1 = request.args.get('num1')
+    num2 = request.args.get('num2')
+    if not (num1 and num2):
+        return 'Please provide two numbers.', 400
+    try:
+        sum_result = float(num1) + float(num2)
+        return f'The sum is: {sum_result}', 200
+    except ValueError:
+        return 'Invalid number format. Please enter a valid number.', 400
+
+if __name__ == '__main__':
+    app.run()
