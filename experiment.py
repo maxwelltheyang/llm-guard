@@ -230,6 +230,7 @@ def run_prompt_with_flags(
     last_code: str = ""
     last_semgrep_json: Optional[Dict[str, Any]] = None
     last_bandit_json = None
+    extension: str = "py"  # Default extension
 
     coder_history.append({"role": "user", "content": prompt_text})
 
@@ -243,7 +244,10 @@ def run_prompt_with_flags(
         transcript.append(("coder", coder_text))
 
         coder_history.append({"role": "assistant", "content": coder_text})
-        code, extension = extract_code_block(coder_text)
+        result = extract_code_block(coder_text)
+        if not result:
+            break
+        code, extension = result
         if not code or not extension:
             break
 

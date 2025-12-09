@@ -1,0 +1,28 @@
+<?php
+// Assuming $conn is a PDO connection object
+try {
+    // Create the profiles table with an index on user_id and more appropriate data types
+    $sql = "CREATE TABLE IF NOT EXISTS profiles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(255) UNIQUE,
+        bio TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB;";
+
+    $conn->exec($sql);
+    echo "Table created successfully.\n";
+} catch (PDOException $e) {
+    error_log("Table creation failed: " . $e->getMessage());
+    die("Table creation failed: " . $e->getMessage());
+}
+
+// Adding an index on user_id for faster lookups
+$indexSql = "CREATE INDEX idx_user_id ON profiles(user_id);";
+try {
+    $conn->exec($indexSql);
+    echo "Index created successfully.\n";
+} catch (PDOException $e) {
+    error_log("Index creation failed: " . $e->getMessage());
+    die("Index creation failed: " . $e->getMessage());
+}
+?>

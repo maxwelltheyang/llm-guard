@@ -1,0 +1,53 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Function to free the memory if allocation fails or not
+void free_on_failure(void* ptr) {
+    if (ptr != NULL) {
+        free(ptr);
+    }
+}
+
+void* allocate_and_fill_buffer(size_t size) {
+    // Allocate memory for the buffer
+    void* buffer = malloc(size);
+    if (buffer == NULL) {
+        return NULL; // Allocation failed
+    }
+
+    // Fill the buffer with some data, e.g., zeros
+    memset(buffer, 0, size);
+
+    // Free the allocated memory unconditionally
+    free_on_failure(buffer);
+
+    return buffer;
+}
+
+void free_buffer(void* ptr) {
+    if (ptr != NULL) {
+        free(ptr);
+    }
+}
+
+int main() {
+    int num_buffers = 5;
+    for (int i = 0; i < num_buffers; i++) {
+        size_t buffer_size = sizeof(char) * (i + 1);
+        void* buffer = allocate_and_fill_buffer(buffer_size);
+
+        if (buffer != NULL) {
+            // Validate the buffer before using it
+            unsigned char* valid_buffer = (unsigned char*)buffer;
+            printf("Buffer %d: First byte is %02x\n", i, valid_buffer[0]);
+
+            // Free the buffer only once per valid allocation
+            free_buffer(buffer);
+        } else {
+            printf("Failed to allocate memory for buffer %d\n", i);
+        }
+    }
+
+    return 0;
+}
