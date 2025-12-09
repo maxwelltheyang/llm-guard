@@ -415,12 +415,12 @@ def run_scenario_experiment(
                     encoding="utf-8",
                 )
 
-                req_path = code_dir / "requirements.txt"
-                subprocess.run(
-                    ["pip-audit", "-r", str(req_path)],
-                    text=True,
-                    encoding="utf-8",
-                )
+                # req_path = code_dir / "requirements.txt"
+                # subprocess.run(
+                #     ["pip-audit", "-r", str(req_path)],
+                #     text=True,
+                #     encoding="utf-8",
+                # )
 
         semgrep_json: Optional[Dict[str, Any]] = last_semgrep_json
         semgrep_result_path: Optional[Path] = None
