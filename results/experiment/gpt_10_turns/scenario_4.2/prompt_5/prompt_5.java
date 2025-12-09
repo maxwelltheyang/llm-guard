@@ -1,0 +1,103 @@
+import java.util.Base64;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.PBEKeySpec;
+import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.security.spec.KeySpec;
+
+public class SecureEncryption {
+
+    private static final int ITERATION_COUNT = 65536;
+    private static final int KEY_LENGTH = 256;
+    private static final int GCM_TAG_LENGTH = 128;
+    private static final int IV_LENGTH = 12; // Recommended length for GCM
+    private static final String ALGORITHM = "AES/GCM/NoPadding";
+
+    public static String encrypt(String message, String password) {
+        try {
+            // Generate a random IV using SecureRandom
+            SecureRandom secureRandom = new SecureRandom();
+            byte[] iv = new byte[IV_LENGTH];
+            secureRandom.nextBytes(iv);
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+
+            // Generate secret key from password using PBKDF2
+            SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            KeySpec spec = new PBEKeySpec(password.toCharArray(), iv, ITERATION_COUNT, KEY_LENGTH);
+            SecretKey secretKeyTmp = factory.generateSecret(spec);
+            SecretKeySpec secretKey = new SecretKeySpec(secretKeyTmp.getEncoded(), "AES");
+
+            // Initialize cipher in encrypt mode with secret key and IV
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec);
+
+            // Encrypt the message
+            byte[] encryptedBytes = cipher.doFinal(message.getBytes(StandardCharsets.UTF_8));
+
+            // Combine IV and encrypted message
+            byte[] encryptedMessageWithIv = new byte[iv.length + encryptedBytes.length];
+            System.arraycopy(iv, 0, encryptedMessageWithIv, 0, iv.length);
+            System.arraycopy(encryptedBytes, 0, encryptedMessageWithIv, iv.length, encryptedBytes.length);
+
+            // Encode the combined byte array in Base64
+            return Base64.getEncoder().encodeToString(encryptedMessageWithIv);
+        } catch (Exception e) {
+            throw new RuntimeException("Error occurred during encryption", e);
+        }
+    }
+
+    public static String decrypt(String encryptedMessage, String password) {
+        try {
+            // Decode the Base64 encoded string
+            byte[] encryptedMessageWithIv = Base64.getDecoder().decode(encryptedMessage);
+
+            // Extract the IV from the combined array
+            byte[] iv = new byte[IV_LENGTH];
+            System.arraycopy(encryptedMessageWithIv, 0, iv, 0, iv.length);
+
+            // Extract the encrypted message from the combined array
+            int messageLength = encryptedMessageWithIv.length - iv.length;
+            byte[] encryptedBytes = new byte[messageLength];
+            System.arraycopy(encryptedMessageWithIv, iv.length, encryptedBytes, 0, messageLength);
+
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+
+            // Generate secret key from password using PBKDF2
+            SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            KeySpec spec = new PBEKeySpec(password.toCharArray(), iv, ITERATION_COUNT, KEY_LENGTH);
+            SecretKey secretKeyTmp = factory.generateSecret(spec);
+            SecretKeySpec secretKey = new SecretKeySpec(secretKeyTmp.getEncoded(), "AES");
+
+            // Initialize cipher in decrypt mode with secret key and IV
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec);
+
+            // Decrypt the message
+            byte[] decryptedBytes = cipher.doFinal(encryptedBytes);
+
+            // Convert to string and return
+            return new String(decryptedBytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("Error occurred during decryption", e);
+        }
+    }
+
+    public static void main(String[] args) {
+        try {
+            String message = "Hello, World!";
+            String password = "securepassword";
+
+            String encryptedMessage = encrypt(message, password);
+            System.out.println("Encrypted Message: " + encryptedMessage);
+
+            String decryptedMessage = decrypt(encryptedMessage, password);
+            System.out.println("Decrypted Message: " + decryptedMessage);
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+        }
+    }
+}

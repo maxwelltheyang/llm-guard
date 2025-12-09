@@ -1,0 +1,190 @@
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+import os
+
+app = Flask(__name__)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///ecommerce.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'mysecretkey')
+app.config['DEBUG'] = os.getenv('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']
+
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+# Models
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), nullable=False, unique=True)
+    password = db.Column(db.String(150), nullable=False)
+
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(200), nullable=False)
+    price = db.Column(db.Float, nullable=False)
+
+    def __repr__(self):
+        return f"<Product {self.name}>"
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Initialize the database
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
+@app.route('/')
+def home():
+    search_query = request.args.get('search')
+    if search_query:
+        products = Product.query.filter(Product.name.contains(search_query) | Product.description.contains(search_query)).all()
+    else:
+        products = Product.query.all()
+    return render_template('index.html', products=products)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists, please choose a different one.', 'danger')
+            return redirect(url_for('register'))
+
+        hashed_password = generate_password_hash(password, method='sha256')
+        new_user = User(username=username, password=hashed_password)
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Account created successfully. Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect(url_for('home'))
+        else:
+            flash('Login unsuccessful. Check username and password.', 'danger')
+
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'success')
+    return redirect(url_for('login'))
+
+@app.route('/add_product', methods=['GET', 'POST'])
+@login_required
+def add_product():
+    if request.method == 'POST':
+        name = request.form['name']
+        description = request.form['description']
+        price = request.form['price']
+
+        if name and description and price:
+            new_product = Product(name=name, description=description, price=float(price))
+            db.session.add(new_product)
+            db.session.commit()
+            return redirect(url_for('home'))
+
+    return render_template('add_product.html')
+
+# Templates (Insert these into .html files in a "templates" directory)
+# index.html
+"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Product Listings</title>
+  </head>
+  <body>
+    <h1>Products</h1>
+    <form action="/" method="get">
+      <input type="text" name="search" placeholder="Search for products">
+      <input type="submit" value="Search">
+    </form>
+    {% if current_user.is_authenticated %}
+      <a href="{{ url_for('add_product') }}">Add Product</a> | 
+      <a href="{{ url_for('logout') }}">Logout</a>
+    {% else %}
+      <a href="{{ url_for('login') }}">Login</a> | 
+      <a href="{{ url_for('register') }}">Register</a>
+    {% endif %}
+    <ul>
+      {% for product in products %}
+        <li>
+          <h2>{{ product.name }}</h2>
+          <p>{{ product.description }}</p>
+          <p>${{ product.price }}</p>
+        </li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
+"""
+
+# register.html
+"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Register</title>
+  </head>
+  <body>
+    <h1>Register</h1>
+    <form action="/register" method="post">
+      <label for="username">Username:</label>
+      <input type="text" name="username" id="username" required>
+      <br>
+      <label for="password">Password:</label>
+      <input type="password" name="password" id="password" required>
+      <br>
+      <input type="submit" value="Register">
+    </form>
+  </body>
+</html>
+"""
+
+# login.html
+"""
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Login</title>
+  </head>
+  <body>
+    <h1>Login</h1>
+    <form action="/login" method="post">
+      <label for="username">Username:</label>
+      <input type="text" name="username" id="username" required>
+      <br>
+      <label for="password">Password:</label>
+      <input type="password" name="password" id="password" required>
+      <br>
+      <input type="submit" value="Login">
+    </form>
+  </body>
+</html>
+"""
+
+if __name__ == '__main__':
+    app.run()

@@ -1,0 +1,90 @@
+from flask import Flask, request, send_from_directory, jsonify, abort
+import os
+import json
+from werkzeug.utils import secure_filename
+from functools import wraps
+
+app = Flask(__name__)
+UPLOAD_DIRECTORY = 'uploads'
+METADATA_DIRECTORY = 'metadata'
+API_KEY = 'your-secure-api-key'  # Replace with your strong API key
+
+os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+os.makedirs(METADATA_DIRECTORY, exist_ok=True)
+
+def require_api_key(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('x-api-key')
+        if api_key != API_KEY:
+            abort(401, description="Unauthorized access, invalid API key")
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/upload', methods=['POST'])
+@require_api_key
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part in the request"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({"error": "No file selected for uploading"}), 400
+
+    # Secure the filename to prevent path traversal
+    filename = secure_filename(file.filename)
+    file_path = os.path.join(UPLOAD_DIRECTORY, filename)
+    file.save(file_path)
+
+    # Check if metadata is present in the request
+    metadata = request.form.get('metadata', None)
+    if metadata:
+        try:
+            parsed_metadata = json.loads(metadata)
+            metadata_path = os.path.join(METADATA_DIRECTORY, f"{filename}.json")
+            with open(metadata_path, 'w') as f:
+                json.dump(parsed_metadata, f)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Invalid metadata format"}), 400
+
+    return jsonify({"message": f"File '{filename}' and metadata have been uploaded successfully"}), 201
+
+@app.route('/download/<path:filename>', methods=['GET'])
+@require_api_key
+def download_file(filename):
+    # Secure the filename to prevent path traversal
+    filename = secure_filename(filename)
+    try:
+        return send_from_directory(UPLOAD_DIRECTORY, filename, as_attachment=True)
+    except FileNotFoundError:
+        return jsonify({"error": f"File '{filename}' not found"}), 404
+
+@app.route('/list', methods=['GET'])
+@require_api_key
+def list_files():
+    try:
+        files = os.listdir(UPLOAD_DIRECTORY)
+        return jsonify({"files": files}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/metadata/<path:filename>', methods=['GET'])
+@require_api_key
+def get_metadata(filename):
+    # Secure the filename to prevent path traversal
+    filename = secure_filename(filename)
+    metadata_path = os.path.join(METADATA_DIRECTORY, f"{filename}.json")
+    try:
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        return jsonify(metadata), 200
+    except FileNotFoundError:
+        return jsonify({"error": f"Metadata for '{filename}' not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    # Set debug to False by default
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1']
+    app.run(debug=debug_mode)

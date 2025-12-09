@@ -1,0 +1,230 @@
+import os
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'your_secret_key')
+
+# In-memory databases for demonstration
+posts = []
+users = {"testuser": generate_password_hash("password")}
+admins = {"admin": generate_password_hash("adminpass")}
+
+# Load debug configuration from environment variable, defaulting to False
+app.config['DEBUG'] = os.environ.get('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+
+def is_admin():
+    return session.get('username') in admins
+
+@app.route('/')
+def home():
+    query = request.args.get('query', '')
+    if query:
+        filtered_posts = [post for post in posts if query.lower() in post['title'].lower() or query.lower() in post['content'].lower()]
+    else:
+        filtered_posts = posts
+    return render_template('index.html', posts=filtered_posts, query=query)
+
+@app.route('/new_post', methods=['GET', 'POST'])
+def new_post():
+    if request.method == 'POST':
+        title = request.form['title']
+        content = request.form['content']
+        date_posted = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        posts.append({'title': title, 'content': content, 'date_posted': date_posted, 'comments': []})
+        return redirect(url_for('home'))
+    return render_template('new_post.html')
+
+@app.route('/post/<int:post_id>', methods=['GET', 'POST'])
+def post_detail(post_id):
+    if post_id < 0 or post_id >= len(posts):
+        return redirect(url_for('home'))
+
+    post = posts[post_id]
+
+    if request.method == 'POST':
+        if 'username' not in session:
+            return redirect(url_for('login'))
+
+        comment_content = request.form['content']
+        comment_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        post['comments'].append({
+            'content': comment_content,
+            'date_posted': comment_date,
+            'user': session['username']
+        })
+        return redirect(url_for('post_detail', post_id=post_id))
+
+    return render_template('post_detail.html', post=post, post_id=post_id, is_admin=is_admin())
+
+@app.route('/delete_post/<int:post_id>')
+def delete_post(post_id):
+    if is_admin() and 0 <= post_id < len(posts):
+        del posts[post_id]
+        flash('Post deleted successfully.', 'success')
+    else:
+        flash('Unauthorized action or invalid post.', 'danger')
+    return redirect(url_for('home'))
+
+@app.route('/delete_comment/<int:post_id>/<int:comment_id>')
+def delete_comment(post_id, comment_id):
+    if is_admin() and 0 <= post_id < len(posts) and 0 <= comment_id < len(posts[post_id]['comments']):
+        del posts[post_id]['comments'][comment_id]
+        flash('Comment deleted successfully.', 'success')
+    else:
+        flash('Unauthorized action or invalid comment.', 'danger')
+    return redirect(url_for('post_detail', post_id=post_id))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if (username in users and check_password_hash(users[username], password)) or (username in admins and check_password_hash(admins[username], password)):
+            session['username'] = username
+            flash('Login successful!', 'success')
+            return redirect(url_for('home'))
+        else:
+            flash('Invalid credentials. Please try again.', 'danger')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('home'))
+
+if __name__ == '__main__':
+    app.run(debug=app.config['DEBUG'])
+
+# templates/index.html
+"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Home</title>
+</head>
+<body>
+    <h1>Blog Posts</h1>
+    {% if 'username' in session %}
+        <p>Welcome, {{ session['username'] }}! <a href="{{ url_for('logout') }}">Logout</a></p>
+    {% else %}
+        <p><a href="{{ url_for('login') }}">Login</a></p>
+    {% endif %}
+    <a href="{{ url_for('new_post') }}">Create New Post</a>
+    <form action="{{ url_for('home') }}" method="get">
+        <input type="text" name="query" placeholder="Search posts" value="{{ query }}">
+        <button type="submit">Search</button>
+    </form>
+    <ul>
+        {% for post in posts %}
+            <li>
+                <h2><a href="{{ url_for('post_detail', post_id=loop.index0) }}">{{ post.title }}</a></h2>
+                <p>{{ post.content }}</p>
+                <small>Posted on {{ post.date_posted }}</small>
+                <small>{{ post.comments|length }} comments</small>
+                {% if is_admin %}
+                    <a href="{{ url_for('delete_post', post_id=loop.index0) }}">Delete Post</a>
+                {% endif %}
+            </li>
+        {% else %}
+            <li>No posts found!</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
+"""
+
+# templates/new_post.html
+"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Post</title>
+</head>
+<body>
+    <h1>Create a New Post</h1>
+    <form action="{{ url_for('new_post') }}" method="post">
+        <label for="title">Title:</label>
+        <input type="text" name="title" id="title" required><br>
+        <label for="content">Content:</label>
+        <textarea name="content" id="content" rows="5" required></textarea><br>
+        <button type="submit">Submit</button>
+    </form>
+    <a href="{{ url_for('home') }}">Back to Home</a>
+</body>
+</html>
+"""
+
+# templates/post_detail.html
+"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ post.title }}</title>
+</head>
+<body>
+    <h1>{{ post.title }}</h1>
+    <p>{{ post.content }}</p>
+    <small>Posted on {{ post.date_posted }}</small>
+
+    <h2>Comments</h2>
+    <ul>
+        {% for comment in post.comments %}
+            <li>
+                <p>{{ comment.content }}</p>
+                <small>Commented on {{ comment.date_posted }} by {{ comment.user }}</small>
+                {% if is_admin %}
+                    <a href="{{ url_for('delete_comment', post_id=post_id, comment_id=loop.index0) }}">Delete Comment</a>
+                {% endif %}
+            </li>
+        {% else %}
+            <li>No comments yet!</li>
+        {% endfor %}
+    </ul>
+
+    {% if 'username' in session %}
+        <h3>Leave a Comment</h3>
+        <form action="{{ url_for('post_detail', post_id=post_id) }}" method="post">
+            <label for="content">Comment:</label>
+            <textarea name="content" id="content" rows="3" required></textarea><br>
+            <button type="submit">Submit</button>
+        </form>
+    {% else %}
+        <p><a href="{{ url_for('login') }}">Log in to comment</a></p>
+    {% endif %}
+
+    <a href="{{ url_for('home') }}">Back to Home</a>
+</body>
+</html>
+"""
+
+# templates/login.html
+"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+</head>
+<body>
+    <h1>Login</h1>
+    <form action="{{ url_for('login') }}" method="post">
+        <label for="username">Username:</label>
+        <input type="text" name="username" id="username" required><br>
+        <label for="password">Password:</label>
+        <input type="password" name="password" id="password" required><br>
+        <button type="submit">Login</button>
+    </form>
+    <a href="{{ url_for('home') }}">Back to Home</a>
+</body>
+</html>
+"""

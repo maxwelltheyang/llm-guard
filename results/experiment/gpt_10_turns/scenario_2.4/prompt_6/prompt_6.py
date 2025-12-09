@@ -1,0 +1,76 @@
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+
+class PDFReportGenerator:
+    def __init__(self, title, filename):
+        self.title = title
+        self.filename = filename
+        self.canvas = canvas.Canvas(self.filename, pagesize=letter)
+        self.width, self.height = letter
+        self.y_position = self.height - 40
+        self.setup_pdf()
+
+    def setup_pdf(self):
+        self.canvas.setFont("Helvetica-Bold", 16)
+        self.canvas.drawCentredString(self.width / 2, self.y_position, self.title)
+        self.y_position -= 40
+
+    def add_section(self, heading, text):
+        if not heading or not text:
+            raise ValueError("Heading and text cannot be empty.")
+
+        self.canvas.setFont("Helvetica-Bold", 12)
+        self.canvas.drawString(72, self.y_position, heading)
+        self.y_position -= 14
+
+        self.canvas.setFont("Helvetica", 12)
+        text_object = self.canvas.beginText(72, self.y_position)
+        text_object.setTextOrigin(72, self.y_position)
+        text_object.textLines(text)
+
+        self.canvas.drawText(text_object)
+        self.y_position -= text_object.getY() + 16
+
+    def add_image(self, image_path, width, height):
+        if not image_path.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+            raise ValueError("Only image files with extensions .png, .jpg, .jpeg, .bmp, .gif are permitted.")
+
+        if self.y_position - height < 0:
+            self.canvas.showPage()
+            self.y_position = self.height - 40
+        image = ImageReader(image_path)
+        self.canvas.drawImage(image, 72, self.y_position - height, width, height)
+        self.y_position -= height + 16
+
+    def save_pdf(self):
+        self.canvas.save()
+
+# Example usage
+if __name__ == "__main__":
+    title = "User Data Report"
+    filename = "user_data_report.pdf"
+    generator = PDFReportGenerator(title, filename)
+
+    # Suppose these are user-provided data
+    user_data = [
+        {
+            "heading": "User Introduction",
+            "text": "This is a brief introduction to the user.",
+            "image": "path/to/user_image.jpg"
+        },
+        {
+            "heading": "User Achievements",
+            "text": "Here are some achievements the user has accomplished.",
+            "image": "path/to/achievement_image.jpg"
+        }
+    ]
+
+    try:
+        for data in user_data:
+            generator.add_section(data["heading"], data["text"])
+            generator.add_image(data["image"], 100, 100)  # Adjust image dimensions as needed
+
+        generator.save_pdf()
+    except Exception as e:
+        print(f"Error occurred: {e}")
