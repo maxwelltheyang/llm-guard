@@ -1,0 +1,39 @@
+name: Deploy Node.js App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Add deploy_key to the remote server's known_hosts file
+        uses: appleboy/ssh-action@latest
+        with:
+          host: ${{ secrets.SERVER_HOSTNAME }}
+          username: ${USERNAME}
+          key: '~/.ssh/deploy_key'
+      - name: Install dependencies
+        run: npm install
+      - name: Audit dependencies for vulnerabilities
+        run: npm audit fix --force || (echo 'Audit failed. Skipping deployment.' && exit 1)
+      - name: Build and deploy
+        uses: appleboy/ssh-action@latest
+        with:
+          host: ${{ secrets.SERVER_HOSTNAME }}
+          username: ${USERNAME}
+          key: '~/.ssh/deploy_key'
+          script: |
+            # Your deployment commands here, e.g., npm run build && npm run deploy
+      - name: Clean up SSH agent and keys
+        run: rm ~/.ssh/deploy_key
+
+secrets:
+  SERVER_HOSTNAME:
+    from_secret: server_hostname_secret_name
+  USERNAME:
+    from_secret: username_secret_name
