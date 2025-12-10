@@ -1,0 +1,34 @@
+#include <stdio.h>
+#include <stdarg.h>
+
+// For logging using syslog
+#include <syslog.h>
+#include <fmt/core.h>
+
+int main() {
+    // Set default facility for syslog messages with an explicit log level mask
+    openlog("myprogram", LOG_PID | LOG_LOCAL6, LOG_USER);
+
+    /**
+     * Logs an error message and code to the console.
+     *
+     * @param format The error message to be logged.
+     */
+    void logError(const char* format, int code) {
+        if (format == NULL) {
+            syslog(LOG_ERR, "Invalid input: Error message cannot be null.\n");
+            return;
+        }
+
+        fmt::print(syslog(LOG_ERR | LOG_LOCAL6), "Error code: {} - {}", code, format);
+    }
+
+    const char* errorMessage = "Error occurred while processing request %d";
+    int errorCode = 123;
+    logError(errorMessage, errorCode);
+
+    // Close the openlog
+    closelog();
+
+    return 0;
+}
