@@ -18,18 +18,13 @@ This system will be evaluated across several domains from web apps to low level 
 
 We hypothesize that *iterative review-regeneration will lower the final vulnerability rate*, at the cost of additional time, and that performance will depend on the task complexity and LLM capability.
 
-## Experiments
-
-put something here later
-
 ## Setup
 ### Prerequisites
 
 - **Python 3.10+** (tested with 3.12)
 - **Ollama** (for Llama models) - [Install Ollama](https://ollama.ai)
-- **Semgrep** - `pip install semgrep`
-- **Bandit** - `pip install bandit`
 - **OpenAI API Key** (for GPT models)
+- **UV package manager installed** ```pip install uv```
 
 ### Installation
 
@@ -41,7 +36,7 @@ put something here later
 
 2. **Create virtual environment**
    ```bash
-   python -m venv .venv
+   uv venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 

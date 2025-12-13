@@ -13,6 +13,12 @@ client = OpenAI(api_key=oai_config_list[0]["api_key"])
 
 
 def baseline_llama(prompt):
+    """
+    Runs a singular baseline prompt for llama3.1
+    - prompt - given user prompt
+    - Returns:
+        response['message']- output of the LLM
+    """
     response = chat(model='llama3.1', messages=[
         {
             'role': 'system',
@@ -29,6 +35,12 @@ def baseline_llama(prompt):
     return response['message']['content']
 
 def baseline_gpt(prompt):
+    """
+    Runs a singular baseline prompt for gpt-4o
+    - prompt - given user prompt
+    - Returns:
+        response['message']- output of the LLM
+    """
     result = client.responses.create(
         model="gpt-4o",
         instructions=BASELINE_PROMPT,
@@ -38,6 +50,12 @@ def baseline_gpt(prompt):
     return result.output_text
 
 def baseline_deepseek(prompt):
+    """
+    Runs a singular baseline prompt for deepseek-coder-v2
+    - prompt - given user prompt
+    - Returns:
+        response['message']- output of the LLM
+    """
     response = chat(model='deepseek-coder-v2', messages=[
         {
             'role': 'system',
@@ -60,8 +78,10 @@ if __name__ == '__main__':
     results = {}
 
     def process_prompt(args):
+        # Process output and put the result in a code file
         i, prompt_data = args
         prompt_copy = prompt_data.copy()
+        # Change API model when needed
         prompt_result = baseline_deepseek(prompt_copy["Prompt"])
         result = extract_code_block(prompt_result)
         
@@ -75,6 +95,7 @@ if __name__ == '__main__':
         
         return i, prompt_copy
 
+    # Concurrency, changable parameter (can change max_workers to whatever desired)
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(process_prompt, (i, prompt_data)) for i, prompt_data in enumerate(prompts)]
         for future in concurrent.futures.as_completed(futures):
