@@ -157,7 +157,100 @@ Each experiment run creates:
 
 ### Analyzing Results
 
-put something here later
+After running experiments, use the following tools to analyze the generated code for vulnerabilities:
+
+#### Using Metis (AI-Powered Code Analysis)
+
+[Metis](https://github.com/arm/metis) is an AI-powered code understanding tool that can analyze your generated code.
+
+1. **Install Metis**:
+   ```bash
+   pip install git+https://github.com/arm/metis.git
+   ```
+
+2. **Configure Metis** (create `metis.yml` in project root):
+   ```yaml
+   metis_engine:
+     metisignore_file: .metisignore
+   
+   llm_provider:
+     name: "ollama"
+     model: "llama3.1"
+     base_url: "http://localhost:11434/v1"
+     code_embedding_model: "all-minilm"
+     docs_embedding_model: "all-minilm"
+   ```
+
+3. **Pull required Ollama models**:
+   ```bash
+   ollama pull llama3.1
+   ollama pull all-minilm
+   ```
+
+4. **Run Metis on generated code**:
+   ```bash
+   uv run metis --codebase-path results/experiment
+   
+   # Or analyze baseline results
+   uv run metis --codebase-path results/baseline
+
+   # Run the following commands in once in the metis CLI
+   index
+   review_code
+   ```
+   This will create a .json file with relevant results, look in eval/exp_metis_vulnerability_summary.json for a comprehensive example.
+
+#### Using CodeQL (GitHub's Code Analysis)
+
+CodeQL performs deep semantic analysis to find vulnerabilities using GitHub Actions.
+
+1. **Run CodeQL Analysis via GitHub Actions**:
+   - The repository includes a CodeQL workflow in `.github/workflows/codeql.yml`
+   - Go to your repository: `https://github.com/maxwelltheyang/llm-guard`
+   - Click the **Actions** tab
+   - Select **CodeQL** workflow from the left sidebar
+   - Click **Run workflow** dropdown
+   - Select the branch you want to analyze
+   - Click **Run workflow**
+
+2. **View Results in GitHub**:
+   - Once the workflow completes, go to the **Security** tab
+   - Click **Code scanning** in the left sidebar
+   - View all detected vulnerabilities with severity levels and descriptions
+   - Click on any alert to see:
+     - Detailed explanation of the vulnerability
+     - Exact code location
+     - Suggested fixes
+     - Related CWE numbers
+
+3. **Download SARIF Results**:
+   - Go to the completed workflow run in the **Actions** tab
+   - Scroll down to the **Artifacts** section
+   - Download the **codeql-results** artifact (contains the SARIF file)
+   - Extract the `.sarif` file from the downloaded zip
+
+4. **Analyze specific directories**:
+   To analyze specific result directories (like `results/baseline`), modify the workflow file to scan that path:
+   ```yaml
+   # In .github/workflows/codeql.yml
+   - name: Perform CodeQL Analysis
+     uses: github/codeql-action/analyze@v3
+     with:
+       category: "/language:python"
+       paths: "results/baseline"  # Add this line
+   ```
+
+#### Using Evaluation Scripts
+
+Place all relevant json or sarif files in the `eval/` directory. Then run the evaluation scripts in the `eval/` directory to aggregate and analyze results:
+
+```bash
+cd eval
+# Modify target and output directories in eval files
+python eval_codeql.py
+# and/or
+python eval_metis.py 
+```
 
 ## Configuration
 
