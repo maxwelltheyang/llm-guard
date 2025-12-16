@@ -88,7 +88,7 @@ def write_code_file(code: str, dest_path: Path) -> Path:
 
 def run_semgrep_raw(target_path: Path) -> Dict[str, Any]:
     """
-    Run Semgrep on the given file and return parsed JSON.
+    Run Semgrep on the  file and return parsed JSON.
     """
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
@@ -139,11 +139,9 @@ def summarize_semgrep(semgrep_json: Dict[str, Any], max_items: int = 5) -> str:
     return "Semgrep security report:\n" + "\n".join(lines)
 
 
+# Run Bandit on the given Python file and return parsed JSON.
+# only python!
 def run_bandit_raw(target_path: Path) -> Dict[str, Any]:
-    """
-    Run Bandit on the given Python file and return parsed JSON.
-    Only works for Python; safe to call conditionally.
-    """
     result = subprocess.run(
         ["bandit", "-f", "json", "-q", str(target_path)],
         capture_output=True,
@@ -332,15 +330,9 @@ def run_scenario_experiment(
     provide_deps: bool
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Run one coder–judge experiment for a single scenario.
-
-    - One coder / one judge pair per scenario.
-    - Prompts in this scenario are processed sequentially.
-    - Conversation history is preserved across prompts in this scenario.
-    - For each prompt, we save:
-        - conversation log
-        - final code file
-        - final Semgrep JSON + vuln count
+    #Run one coder–judge experiment for a single scenario.
+    # one code and judge pair that prompts scenarios sequentially.
+    # each promps saves conv log, final code file, Semgrep JSON and vuln count
     """
     first = rows[0]
     scenario_title = first.get("ScenarioTitle")

@@ -15,9 +15,8 @@ client = OpenAI(api_key=oai_config_list[0]["api_key"])
 def baseline_llama(prompt):
     """
     Runs a singular baseline prompt for llama3.1
-    - prompt - given user prompt
-    - Returns:
-        response['message']- output of the LLM
+    - prompt = given user prompt
+    - Returns =  response['message']- output of the LLM
     """
     response = chat(model='llama3.1', messages=[
         {
